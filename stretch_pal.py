@@ -4,6 +4,7 @@ StretchPal — 你的可爱桌面拉伸提醒伙伴
 """
 import tkinter as tk
 import random
+import math
 import threading
 import sys
 from datetime import datetime, date
@@ -22,34 +23,38 @@ from messages import MESSAGES
 # 提醒时间点
 REMINDER_HOURS = (9, 11, 13, 15, 17)
 
-# ---- 颜色配置（粉色可爱风） ----
-BG_COLOR = "#FFF0F5"  # 薰衣草白
-ACCENT_COLOR = "#FFB6C1"  # 浅粉
-TEXT_COLOR = "#8B2252"  # 深玫红
-TITLE_COLOR = "#FF6347"  # 番茄红
-HINT_COLOR = "#CD6889"  # 中粉
-BAR_START = "#FFB6C1"
-BAR_END = "#FF69B4"
+# ---- 颜色配置（可爱贴纸风） ----
+TRANSPARENT = "#FF00FF"  # 透明色 key（用于圆角窗口）
+CARD_BG = "#FFFBF5"  # 暖白卡面
+CARD_BORDER = "#FFC0CB"  # 粉色描边
+SHADOW_COLOR = "#E8D5E0"  # 淡紫阴影
+TITLE_COLOR = "#FF6B6B"  # 珊瑚红标题
+TEXT_COLOR = "#5D4E6D"  # 软紫灰正文
+HINT_COLOR = "#C9A9C6"  # 薰衣草提示
+ACCENT_COLOR = "#FFB6C1"  # 浅粉（备用控件）
+# 装饰圆点色板
+DOT_COLORS = ["#FFB6C1", "#FFD700", "#87CEEB", "#DDA0DD", "#98FB98", "#FF9A9E"]
 
 
 class FloatingBanner:
-    """从屏幕右侧飘入→横穿→左侧飘出的可爱横幅"""
+    """圆角贴纸卡片 — 从右飘入，上下微浮，横穿屏幕"""
 
     def __init__(self, master, emoji, text):
         self.master = master
         self.window = tk.Toplevel(master)
         self.window.overrideredirect(True)
         self.window.attributes("-topmost", True)
-        self.window.attributes("-alpha", 0.93)
-        self.window.configure(bg=BG_COLOR)
+        self.window.configure(bg=TRANSPARENT)
+        self.window.attributes("-transparentcolor", TRANSPARENT)
 
-        self.width = 460
-        self.height = 130
+        self.width = 290
+        self.height = 250
+        self._wave = 0  # 浮动相位
 
         screen_w = self.window.winfo_screenwidth()
         screen_h = self.window.winfo_screenheight()
         self.x = screen_w + 20
-        self.y = random.randint(60, max(60, screen_h - 350))
+        self.y = random.randint(80, max(80, screen_h - 400))
 
         self.window.geometry(f"{self.width}x{self.height}+{self.x}+{self.y}")
 
@@ -58,7 +63,6 @@ class FloatingBanner:
         self._bind_click()
         self._animate()
 
-    # ---- 窗口不抢焦点 ----
     def _no_focus(self):
         try:
             import ctypes
@@ -73,98 +77,124 @@ class FloatingBanner:
         except Exception:
             pass
 
-    # ---- UI ----
+    def _round_rect(self, canvas, x1, y1, x2, y2, r=18, **kwargs):
+        """用平滑多边形画圆角矩形"""
+        points = [
+            x1 + r, y1,
+            x2 - r, y1,
+            x2, y1 + r,
+            x2, y2 - r,
+            x2 - r, y2,
+            x1 + r, y2,
+            x1, y2 - r,
+            x1, y1 + r,
+        ]
+        canvas.create_polygon(points, smooth=True, **kwargs)
+
     def _build_ui(self, emoji, text):
-        # 顶部渐变装饰条
-        bar = tk.Canvas(
+        canvas = tk.Canvas(
             self.window,
             width=self.width,
-            height=4,
+            height=self.height,
             highlightthickness=0,
-            bg=BG_COLOR,
+            bg=TRANSPARENT,
         )
-        bar.place(x=0, y=0)
-        for i in range(self.width):
-            ratio = i / self.width
-            r = 255
-            g = int(182 - 30 * ratio)
-            b = int(193 - 50 * ratio)
-            color = f"#{r:02x}{max(0, g):02x}{max(0, b):02x}"
-            bar.create_line(i, 0, i, 4, fill=color)
+        canvas.pack()
 
-        # 主容器
-        frame = tk.Frame(self.window, bg=BG_COLOR, bd=0)
-        frame.pack(fill="both", expand=True, padx=12, pady=(10, 6))
+        # 卡片阴影
+        self._round_rect(canvas, 14, 14, self.width - 6, self.height - 6,
+                         r=18, fill=SHADOW_COLOR, outline="")
+        # 主卡片
+        self._round_rect(canvas, 8, 8, self.width - 12, self.height - 12,
+                         r=18, fill=CARD_BG, outline=CARD_BORDER, width=2)
 
-        # Emoji
-        emoji_lbl = tk.Label(
-            frame,
-            text=emoji,
-            font=("Segoe UI Emoji", 50),
-            bg=BG_COLOR,
+        # 大 emoji — 视觉焦点
+        canvas.create_text(
+            self.width // 2, 55, text=emoji,
+            font=("Segoe UI Emoji", 48),
         )
-        emoji_lbl.pack(side="left", padx=(18, 15))
 
-        # 文字区域
-        text_frame = tk.Frame(frame, bg=BG_COLOR)
-        text_frame.pack(side="left", fill="both", expand=True)
-
-        title = tk.Label(
-            text_frame,
-            text="⏰ 活动时间到！",
-            font=("Microsoft YaHei", 13, "bold"),
-            fg=TITLE_COLOR,
-            bg=BG_COLOR,
+        # 标题
+        canvas.create_text(
+            self.width // 2, 103, text="⏰ 活动时间到！",
+            font=("Microsoft YaHei", 12, "bold"),
+            fill=TITLE_COLOR,
         )
-        title.pack(anchor="w", pady=(8, 4))
 
-        msg = tk.Label(
-            text_frame,
-            text=text,
-            font=("Microsoft YaHei", 13),
-            fg=TEXT_COLOR,
-            bg=BG_COLOR,
-            justify="left",
-        )
-        msg.pack(anchor="w")
+        # 正文 — 支持 \n 换行
+        lines = text.split("\n")
+        msg_y = 132
+        for line in lines:
+            canvas.create_text(
+                self.width // 2, msg_y, text=line,
+                font=("Microsoft YaHei", 11),
+                fill=TEXT_COLOR,
+            )
+            msg_y += 24
 
-        hint = tk.Label(
-            text_frame,
-            text="( 点击我消失 ~ )",
-            font=("Microsoft YaHei", 9),
-            fg=HINT_COLOR,
-            bg=BG_COLOR,
+        # 底部提示
+        canvas.create_text(
+            self.width // 2, msg_y + 6, text="( 点我消失 ~ )",
+            font=("Microsoft YaHei", 8),
+            fill=HINT_COLOR,
         )
-        hint.pack(anchor="w", pady=(4, 0))
 
-        # 角上的小花装饰
-        deco = tk.Label(
-            self.window,
-            text="✿",
-            font=("Segoe UI Emoji", 12),
-            fg="#FF69B4",
-            bg=BG_COLOR,
+        # 四角 + 随机装饰小圆点
+        corners = [
+            (24, 24), (self.width - 34, 24),
+            (24, self.height - 34), (self.width - 34, self.height - 34),
+        ]
+        for cx, cy in corners:
+            color = random.choice(DOT_COLORS)
+            canvas.create_oval(cx - 4, cy - 4, cx + 4, cy + 4,
+                              fill=color, outline="", width=0)
+
+        for _ in range(4):
+            cx = random.randint(30, self.width - 30)
+            cy = random.randint(30, self.height - 30)
+            size = random.randint(2, 4)
+            canvas.create_oval(
+                cx - size, cy - size, cx + size, cy + size,
+                fill=random.choice(DOT_COLORS), outline="", width=0,
+            )
+
+        # 卡片顶部的可爱小耳朵装饰
+        ear_y = 10
+        for ear_x in [self.width // 2 - 30, self.width // 2 + 30]:
+            canvas.create_arc(
+                ear_x - 8, ear_y, ear_x + 8, ear_y + 16,
+                start=0, extent=180, fill=CARD_BG, outline=CARD_BORDER, width=2,
+            )
+        # 小耳朵上的高光
+        canvas.create_oval(
+            self.width // 2 - 33, ear_y + 4,
+            self.width // 2 - 27, ear_y + 8,
+            fill="#FFF", outline="",
         )
-        deco.place(x=self.width - 25, y=self.height - 25)
+        canvas.create_oval(
+            self.width // 2 + 27, ear_y + 4,
+            self.width // 2 + 33, ear_y + 8,
+            fill="#FFF", outline="",
+        )
+
+        self._canvas = canvas
 
     def _bind_click(self):
         self.window.bind("<Button-1>", self.close)
-        # 让子控件也响应点击关闭
-        for child in self.window.winfo_children():
-            child.bind("<Button-1>", self.close)
-            for sub in child.winfo_children():
-                sub.bind("<Button-1>", self.close)
+        self._canvas.bind("<Button-1>", self.close)
 
-    # ---- 动画 ----
     def _animate(self):
         if self.x < -self.width - 20:
             self.window.destroy()
             return
 
-        self.x -= 5
+        self._wave += 1
+        y_offset = int(9 * math.sin(self._wave / 14))
+        self.x -= 4
+
         try:
             self.window.geometry(
-                f"{self.width}x{self.height}+{self.x}+{self.y}"
+                f"{self.width}x{self.height}+{self.x}+{self.y + y_offset}"
             )
         except tk.TclError:
             return
