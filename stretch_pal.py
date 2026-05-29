@@ -34,6 +34,21 @@ HINT_COLOR = "#C9A9C6"  # 薰衣草提示
 ACCENT_COLOR = "#FFB6C1"  # 浅粉（备用控件）
 # 装饰圆点色板
 DOT_COLORS = ["#FFB6C1", "#FFD700", "#87CEEB", "#DDA0DD", "#98FB98", "#FF9A9E"]
+# 尾焰亮晶晶色板
+SPARKLE_COLORS = ["#FFD700", "#FFB6C1", "#FF69B4", "#FFA500", "#FFFACD",
+                  "#87CEEB", "#DDA0DD", "#FF1493", "#FFDAB9", "#E0FFFF"]
+
+# ---- 锁屏归来暖心文案 ----
+WELCOME_BACK = [
+    ("🔓", "欢迎回来！\n刚才辛苦啦，起来走走吧～"),
+    ("☕", "解锁成功！\n奖励自己站起来续杯咖啡？"),
+    ("🦸", "大佬归来！\n趁刚才休息了，再拉伸一下？"),
+    ("🌸", "您辛苦啦！\n起来活动活动奖励自己吧～"),
+    ("💖", "离开了一会儿呢\n是时候站起来续命了！"),
+    ("🎉", "欢迎归位！\n你的椅子说它想你了\n但你先站着！"),
+    ("🍀", "锁屏归来，元气满满！\n伸个懒腰好运翻倍～"),
+    ("✨", "辛苦了辛苦了！\n系统判定你需要起来蹦跶两下"),
+]
 
 
 class FloatingBanner:
@@ -50,6 +65,7 @@ class FloatingBanner:
         self.width = 290
         self.height = 250
         self._wave = 0  # 浮动相位
+        self._sparkles = []  # 活跃的尾焰粒子窗口
 
         screen_w = self.window.winfo_screenwidth()
         screen_h = self.window.winfo_screenheight()
@@ -185,6 +201,7 @@ class FloatingBanner:
 
     def _animate(self):
         if self.x < -self.width - 20:
+            self._clear_sparkles()
             self.window.destroy()
             return
 
@@ -192,14 +209,90 @@ class FloatingBanner:
         y_offset = int(9 * math.sin(self._wave / 14))
         self.x -= 4
 
+        # 每 3 帧生成一颗亮晶晶尾焰
+        if self._wave % 3 == 0:
+            self._spawn_sparkle()
+
         try:
             self.window.geometry(
                 f"{self.width}x{self.height}+{self.x}+{self.y + y_offset}"
             )
         except tk.TclError:
+            self._clear_sparkles()
             return
 
         self._anim_id = self.window.after(22, self._animate)
+
+    # ---- 亮晶晶尾焰粒子 ----
+    def _spawn_sparkle(self):
+        """在横幅尾部生成一颗飘落的亮晶晶粒子"""
+        sparkle_size = random.randint(6, 12)
+        sx = self.x + self.width + random.randint(-10, 10)
+        sy = self.y + random.randint(15, self.height - 10)
+        color = random.choice(SPARKLE_COLORS)
+
+        win = tk.Toplevel(self.master)
+        win.overrideredirect(True)
+        win.attributes("-topmost", True)
+        win.configure(bg=TRANSPARENT)
+        win.attributes("-transparentcolor", TRANSPARENT)
+        win.geometry(f"{sparkle_size}x{sparkle_size}+{sx}+{sy}")
+
+        c = tk.Canvas(win, width=sparkle_size, height=sparkle_size,
+                      highlightthickness=0, bg=TRANSPARENT)
+        c.pack()
+        # 亮晶晶圆点 + 十字光芒
+        c.create_oval(0, 0, sparkle_size, sparkle_size,
+                      fill=color, outline="", width=0)
+        mid = sparkle_size // 2
+        c.create_line(mid, 0, mid, sparkle_size, fill="#FFFFFF", width=1)
+        c.create_line(0, mid, sparkle_size, mid, fill="#FFFFFF", width=1)
+
+        # 无焦点
+        try:
+            import ctypes
+            hwnd = win.winfo_id()
+            GWL_EXSTYLE = -20
+            WS_EX_NOACTIVATE = 0x08000000
+            WS_EX_TOOLWINDOW = 0x00000080
+            ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            ex_style |= WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
+        except Exception:
+            pass
+
+        # 动画：向下飘落 + 渐隐
+        steps = random.randint(6, 10)
+        drift_x = random.choice([-2, -1, 1, 2])
+        drift_y = random.randint(2, 5)
+
+        def drift(remaining=steps):
+            nonlocal sx, sy
+            if remaining <= 0:
+                try:
+                    win.destroy()
+                except tk.TclError:
+                    pass
+                return
+            sx += drift_x
+            sy += drift_y
+            try:
+                win.attributes("-alpha", remaining / steps)
+                win.geometry(f"+{sx}+{sy}")
+            except tk.TclError:
+                return
+            win.after(80, drift, remaining - 1)
+
+        win.after(30, drift)
+        self._sparkles.append(win)
+
+    def _clear_sparkles(self):
+        for w in getattr(self, "_sparkles", []):
+            try:
+                w.destroy()
+            except tk.TclError:
+                pass
+        self._sparkles.clear()
 
     def close(self, event=None):
         if hasattr(self, "_anim_id"):
@@ -217,6 +310,7 @@ class StretchPal:
 
         self._shown_hours = set()
         self._last_date = date.today()
+        self._was_locked = False  # 锁屏状态追踪
 
         if HAS_TRAY:
             self._setup_tray()
@@ -224,6 +318,7 @@ class StretchPal:
             self._setup_fallback()
 
         self._schedule_check()
+        self._check_lock()  # 每3秒检测锁屏状态
         print("[StretchPal] 已启动！在 9-17 点每2小时提醒一次")
         if HAS_TRAY:
             print("   右键系统托盘图标 → 测试弹窗 / 退出")
@@ -343,9 +438,32 @@ class StretchPal:
         """供托盘/小花回调，调度到主线程"""
         self.root.after(0, self._show_banner)
 
-    def _show_banner(self):
-        emoji, text = random.choice(MESSAGES)
+    def _show_banner(self, emoji=None, text=None):
+        if emoji is None or text is None:
+            emoji, text = random.choice(MESSAGES)
         FloatingBanner(self.root, emoji, text)
+
+    # ========== 锁屏检测 ==========
+
+    def _is_locked(self):
+        try:
+            import ctypes
+            h = ctypes.windll.user32.OpenDesktopW("Default", 0, False, 0x0001)
+            if h:
+                ctypes.windll.user32.CloseDesktop(h)
+                return False
+            return True
+        except Exception:
+            return False
+
+    def _check_lock(self):
+        locked = self._is_locked()
+        if not locked and self._was_locked:
+            # 锁屏 → 解锁：弹出暖心横幅
+            emoji, text = random.choice(WELCOME_BACK)
+            self._show_banner(emoji=emoji, text=text)
+        self._was_locked = locked
+        self.root.after(3000, self._check_lock)
 
     # ========== 托盘状态 ==========
 
