@@ -194,7 +194,7 @@ class StretchPal:
             self._setup_fallback()
 
         self._schedule_check()
-        print("🌸 StretchPal 已启动！在 9-17 点每2小时提醒一次")
+        print("[StretchPal] 已启动！在 9-17 点每2小时提醒一次")
         if HAS_TRAY:
             print("   右键系统托盘图标 → 测试弹窗 / 退出")
         else:
@@ -349,4 +349,31 @@ class StretchPal:
 
 
 if __name__ == "__main__":
-    StretchPal()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="StretchPal - 桌面拉伸提醒")
+    parser.add_argument(
+        "--now", action="store_true", help="启动后立即弹窗演示"
+    )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="只弹窗一次然后退出（测试用）",
+    )
+    args = parser.parse_args()
+
+    if args.test:
+        # 纯测试：弹一个窗，飘完退出
+        root = tk.Tk()
+        root.withdraw()
+        emoji, text = random.choice(MESSAGES)
+        banner = FloatingBanner(root, emoji, text)
+        print("[StretchPal] 测试横幅已弹出，12秒飘完后自动退出...")
+        # 12秒后自动退出（动画约10秒，留2秒余量）
+        root.after(12000, lambda: (root.quit(), root.destroy()))
+        root.mainloop()
+        sys.exit(0)
+
+    app = StretchPal()
+    if args.now:
+        app.root.after(500, app._show_banner)
