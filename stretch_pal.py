@@ -58,7 +58,7 @@ WELCOME_BACK = [
 class FloatingBanner:
     """圆角贴纸卡片 — 从右飘入，上下微浮，横穿屏幕"""
 
-    def __init__(self, master, emoji, text):
+    def __init__(self, master, emoji, text, title="⏰ 活动时间到！"):
         self.master = master
         self.window = tk.Toplevel(master)
         self.window.overrideredirect(True)
@@ -78,7 +78,7 @@ class FloatingBanner:
 
         self.window.geometry(f"{self.width}x{self.height}+{self.x}+{self.y}")
 
-        self._build_ui(emoji, text)
+        self._build_ui(emoji, text, title)
         self._no_focus()
         self._bind_click()
         self._animate()
@@ -111,7 +111,7 @@ class FloatingBanner:
         ]
         canvas.create_polygon(points, smooth=True, **kwargs)
 
-    def _build_ui(self, emoji, text):
+    def _build_ui(self, emoji, text, title="⏰ 活动时间到！"):
         canvas = tk.Canvas(
             self.window,
             width=self.width,
@@ -136,7 +136,7 @@ class FloatingBanner:
 
         # 标题
         canvas.create_text(
-            self.width // 2, 103, text="⏰ 活动时间到！",
+            self.width // 2, 103, text=title,
             font=("Microsoft YaHei", 12, "bold"),
             fill=TITLE_COLOR,
         )
@@ -442,10 +442,13 @@ class StretchPal:
         """供托盘/小花回调，调度到主线程"""
         self.root.after(0, self._show_banner)
 
-    def _show_banner(self, emoji=None, text=None):
+    def _show_banner(self, emoji=None, text=None, title=None):
         if emoji is None or text is None:
             emoji, text = random.choice(MESSAGES)
-        FloatingBanner(self.root, emoji, text)
+        kwargs = {"emoji": emoji, "text": text}
+        if title is not None:
+            kwargs["title"] = title
+        FloatingBanner(self.root, **kwargs)
 
     # ========== 锁屏检测 ==========
 
@@ -475,7 +478,8 @@ class StretchPal:
         if not locked and self._was_locked:
             # 锁屏 → 解锁：弹出暖心横幅
             emoji, text = random.choice(WELCOME_BACK)
-            self._show_banner(emoji=emoji, text=text)
+            self._show_banner(emoji=emoji, text=text,
+                              title="🔓 欢迎回来！")
         self._was_locked = locked
         self.root.after(2000, self._check_lock)  # 每2秒检查一次
 
