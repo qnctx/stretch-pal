@@ -446,13 +446,23 @@ class StretchPal:
     # ========== 锁屏检测 ==========
 
     def _is_locked(self):
+        """用 OpenInputDesktop 检测当前输入桌面是否为锁屏桌面"""
         try:
             import ctypes
-            h = ctypes.windll.user32.OpenDesktopW("Default", 0, False, 0x0001)
-            if h:
-                ctypes.windll.user32.CloseDesktop(h)
-                return False
-            return True
+            # 打开当前接收用户输入的桌面（锁屏时是 Winlogon 桌面）
+            h = ctypes.windll.user32.OpenInputDesktop(
+                0, False, 0x00010000  # GENERIC_READ
+            )
+            if not h:
+                return True  # 打不开 → 大概率在锁屏
+            # 取桌面名称判断
+            name = ctypes.create_unicode_buffer(256)
+            ctypes.windll.user32.GetUserObjectInformationW(
+                h, 2, name, ctypes.sizeof(name), None  # UOI_NAME = 2
+            )
+            ctypes.windll.user32.CloseDesktop(h)
+            # 锁屏时活动桌面名称为 "Winlogon"
+            return name.value == "Winlogon"
         except Exception:
             return False
 
@@ -463,7 +473,7 @@ class StretchPal:
             emoji, text = random.choice(WELCOME_BACK)
             self._show_banner(emoji=emoji, text=text)
         self._was_locked = locked
-        self.root.after(3000, self._check_lock)
+        self.root.after(2000, self._check_lock)  # 每2秒检查一次
 
     # ========== 托盘状态 ==========
 
