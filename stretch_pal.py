@@ -315,6 +315,7 @@ class StretchPal:
         self._shown_hours = set()
         self._last_date = date.today()
         self._was_locked = False  # 锁屏状态追踪
+        self._last_unlock = datetime.min  # 防抖：上次解锁时间
 
         if HAS_TRAY:
             self._setup_tray()
@@ -474,12 +475,15 @@ class StretchPal:
             return False
 
     def _check_lock(self):
+        now = datetime.now()
         locked = self._is_locked()
         if not locked and self._was_locked:
-            # 锁屏 → 解锁：弹出暖心横幅
-            emoji, text = random.choice(WELCOME_BACK)
-            self._show_banner(emoji=emoji, text=text,
-                              title="🔓 欢迎回来！")
+            # 防抖：10秒内不重复弹
+            if (now - self._last_unlock).total_seconds() > 10:
+                self._last_unlock = now
+                emoji, text = random.choice(WELCOME_BACK)
+                self._show_banner(emoji=emoji, text=text,
+                                  title="🔓 欢迎回来！")
         self._was_locked = locked
         self.root.after(2000, self._check_lock)  # 每2秒检查一次
 
